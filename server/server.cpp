@@ -10,7 +10,8 @@
 
 Logger *logger = nullptr;
 QDataStream::Version kDSVersion = QDataStream::Qt_5_5;
-QList<QSslSocket> list;
+QList<QSslSocket> controllers;
+QList<QSslSocket> slaves;
 
 
 
@@ -35,6 +36,7 @@ void Server::setKey(QString value)
     keyPath = value;
 }
 
+
 void Server::disconnected()
 {
     QSslSocket* socket = qobject_cast<QSslSocket*>(sender());
@@ -47,6 +49,13 @@ void Server::disconnected()
 void Server::readyRead()
 {
 
+    //when client connects server should send a command to authenticate who the client is
+    //if the client doesnt send back a responce in x time then disconnect the user
+    //if they send invalid data aka not an actual client connecting then disconnect them straight away
+    //if they authenticate either add them to the slave list or controller list, note anyone can be a
+    //slave without authenticating (with user and pass) but controllers must be verified
+    //also whenever a command is sent to the slaves all the controllers need to get updated with the
+    //status of the slaves
     logger->log( "Ready read");
     QSslSocket* socket = qobject_cast<QSslSocket*>(sender());
 
@@ -80,9 +89,20 @@ void Server::readyRead()
     ds >> command;
     logger->log("Command: " + command);
 
-    if(command == "getLists")
+    if(command == "Auth")
     {
-        logger->log("Getting new lists");
+        logger->log("Client trying to authenticate");
+        logger->log("Checking if allready authed");
+        if(checkIfSocketIsAuth(*socket) == true)
+        {
+            logger->log("ERROR client is allready authed");
+            //do something either disconnect or send message back
+            //this shouldnt happen
+        }else
+        {
+            logger->log("Authenticating");
+
+        }
 
     }else if(command == "sendLists")
     {
@@ -93,9 +113,62 @@ void Server::readyRead()
 
 
 
+}
 
+bool Server::checkIfSocketIsAuth(QSslSocket &sock)
+{
+    bool slaveStatus = false;
+    bool controllerStatus = false;
+    for(int i = 0; i < slaves.size(); i++)
+    {
+        if(slaves.contains(sock))
+        {
+            slaveStatus = true;
+        }
+    }
+
+    for(int i = 0; i < controllers.size(); i++)
+    {
+        if(controllers.contains(sock))
+        {
+            controllerStatus = true;
+        }
+    }
+
+    if(slaveStatus == true && controllerStatus == true)
+    {
+        //we have a problem
+        logger->log("ERROR This socket is in both lists THATS A PROBLEM");
+        sock.close();
+        slaves.removeAll(sock);
+        controllers.removeAll(sock);
+        return false;
+    }else if(slaveStatus == true || controllerStatus == true)
+    {
+        return true;
+    }
+
+    return false;
 
 }
+
+void Server::sendAuthMessage()
+{
+logger->log("Sending auth message");
+QSslSocket* socket = qobject_cast<QSslSocket*>(sender());
+QByteArray Data;
+QDataStream sds(socket);
+QDataStream bds(&Data, QIODevice::WriteOnly);
+sds.setVersion(kDSVersion);
+bds.setVersion(kDSVersion);
+QString command = "Auth";
+bds << command;
+sds << Data;
+
+}
+
+
+
 
 void Server::encrypted()
 {

@@ -18,6 +18,7 @@ public:
 
     void setCert(QString value);
     void setKey(QString value);
+    void sendAuthMessage();
 
 signals:
 
@@ -34,6 +35,8 @@ public slots:
 private:
     QString certPath;
     QString keyPath;
+    bool checkIfSocketIsAuth(QSslSocket &sock);
+
 
 protected:
     void incomingConnection(qintptr handle);
